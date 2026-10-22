@@ -33,6 +33,24 @@ func NewFrame() (Frame, error) {
 	return Frame{frame}, nil
 }
 
+func NewFrameWithVideoBuffers(height, width int, format PixelFormat) (Frame, error) {
+	frame := C.av_frame_alloc()
+	if frame == nil {
+		return Frame{}, ErrOOM
+	}
+	frame.format = C.int(format)
+	frame.width = C.int(width)
+	frame.height = C.int(height)
+
+	ok := C.av_frame_get_buffer(frame, C.int(0))
+	if ok < 0 {
+		return Frame{}, fmt.Errorf("failed to get buffer for avframe %d: %s", -ok, AvErrorString(int(ok)))
+	}
+
+	trackFrameAlloc(uintptr(unsafe.Pointer(frame)))
+	return Frame{frame}, nil
+}
+
 func WrapFrame(f unsafe.Pointer) Frame {
 	return Frame{(*C.AVFrame)(f)}
 }
@@ -152,6 +170,18 @@ func (f *Frame) ExtendedData() (SampleData, int) {
 	return toSampleData(f.inner.extended_data, int(f.inner.ch_layout.nb_channels)), int(f.inner.nb_samples)
 }
 
+func (f *Frame) Data() **C.uint8_t {
+	return (**C.uint8_t)(unsafe.Pointer(&f.inner.data[0]))
+
+}
+
+func (f *Frame) LineSize() *C.int {
+	return (*C.int)(unsafe.Pointer(&f.inner.linesize[0]))
+}
+
+func (f *Frame) KeyFrame() bool {
+	return f.inner.pict_type&C.AV_PICTURE_TYPE_I != 0
+}
 func (f *Frame) SetKeyFrame() {
 	f.inner.pict_type = C.AV_PICTURE_TYPE_I
 	// f.inner.key_frame = 1
